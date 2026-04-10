@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>TikFlow | Короткие видео</title>
+    <title>TikFlow | Видео с хэштегами и поиском</title>
     <style>
         * {
             margin: 0;
@@ -68,7 +68,7 @@
             display: block;
         }
 
-        /* Лента видео (как TikTok) */
+        /* Лента видео */
         .video-feed {
             height: 100%;
             overflow-y: scroll;
@@ -108,11 +108,27 @@
             font-weight: bold;
             font-size: 16px;
             margin-bottom: 5px;
+            cursor: pointer;
         }
 
         .video-caption {
             font-size: 14px;
             opacity: 0.9;
+        }
+
+        .hashtags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .hashtag {
+            background: rgba(255,255,255,0.2);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
         }
 
         .video-actions {
@@ -142,6 +158,62 @@
 
         .liked {
             color: #ff3b5c;
+        }
+
+        /* Поисковая строка */
+        .search-header {
+            position: sticky;
+            top: 0;
+            background: rgba(0,0,0,0.95);
+            padding: 15px;
+            z-index: 50;
+            border-bottom: 1px solid #222;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            background: #1a1a1a;
+            border-radius: 30px;
+            padding: 8px 15px;
+        }
+
+        .search-box input {
+            flex: 1;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .search-box button {
+            background: #ff3b5c;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+        }
+
+        .search-filters {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .filter-btn {
+            background: #1a1a1a;
+            border: none;
+            padding: 6px 15px;
+            border-radius: 20px;
+            color: #888;
+            cursor: pointer;
+        }
+
+        .filter-btn.active {
+            background: #ff3b5c;
+            color: white;
         }
 
         /* Профиль */
@@ -241,6 +313,11 @@
         .hidden {
             display: none;
         }
+
+        .back-btn {
+            background: #333;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -267,11 +344,39 @@
     </div>
 </div>
 
-<!-- Основное приложение (после входа) -->
+<!-- Основное приложение -->
 <div id="app" style="display:none;">
     <!-- Лента видео -->
     <div id="feedPage" class="page active">
+        <div class="search-header">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Поиск по никнейму или #хэштегу...">
+                <button onclick="performSearch()">🔍 Найти</button>
+            </div>
+            <div class="search-filters">
+                <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">Все</button>
+                <button class="filter-btn" data-filter="users" onclick="setFilter('users')">Пользователи</button>
+                <button class="filter-btn" data-filter="hashtags" onclick="setFilter('hashtags')">Хэштеги</button>
+            </div>
+        </div>
         <div class="video-feed" id="videoFeed"></div>
+    </div>
+
+    <!-- Страница результатов поиска пользователей -->
+    <div id="searchUsersPage" class="page">
+        <div class="search-header">
+            <button class="back-btn" onclick="goBackToFeed()" style="width: auto; padding: 8px 20px;">← Назад</button>
+            <h3 style="color: white; margin-top: 10px;" id="searchQueryDisplay"></h3>
+        </div>
+        <div id="usersList" style="padding: 20px;"></div>
+    </div>
+
+    <!-- Чужой профиль -->
+    <div id="foreignProfilePage" class="page">
+        <div class="search-header">
+            <button class="back-btn" onclick="goBackFromForeignProfile()" style="width: auto; padding: 8px 20px;">← Назад</button>
+        </div>
+        <div id="foreignProfileContent"></div>
     </div>
 
     <!-- Загрузка -->
@@ -284,11 +389,12 @@
             </div>
             <input type="file" id="videoInput" accept="video/*" style="display:none" onchange="handleVideoSelect(this)">
             <input type="text" id="videoCaption" placeholder="Описание видео...">
+            <input type="text" id="videoHashtags" placeholder="Хэштеги через пробел (например: #funny #cool #trending)">
             <button onclick="uploadVideo()">Опубликовать</button>
         </div>
     </div>
 
-    <!-- Профиль -->
+    <!-- Мой профиль -->
     <div id="profilePage" class="page">
         <div id="profileContent"></div>
     </div>
@@ -311,12 +417,34 @@
 </div>
 
 <script>
+    // ========== FIREBASE КОНФИГУРАЦИЯ ==========
+    // Вставьте сюда вашу конфигурацию Firebase
+    const firebaseConfig = {
+        apiKey: "AIzaSyB2xL9Fb3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV3wX", // ЗАМЕНИТЕ НА ВАШУ
+        authDomain: "tikflow-app.firebaseapp.com",        // ЗАМЕНИТЕ
+        projectId: "tikflow-app",                         // ЗАМЕНИТЕ
+        storageBucket: "tikflow-app.firebasestorage.app", // ЗАМЕНИТЕ
+        messagingSenderId: "123456789012",                // ЗАМЕНИТЕ
+        appId: "1:123456789012:web:abc123def456"          // ЗАМЕНИТЕ
+    };
+    
+    // Инициализация Firebase (раскомментируйте после добавления SDK)
+    // import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    // import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    // const firebaseApp = initializeApp(firebaseConfig);
+    // const db_firebase = getFirestore(firebaseApp);
+    // console.log("Firebase инициализирован", db_firebase);
+    
+    console.log("Firebase конфигурация готова:", firebaseConfig);
+    
     // ========== ХРАНИЛИЩЕ (IndexedDB) ==========
     let db;
     let currentUser = null;
+    let currentFilter = 'all';
+    let currentSearchResults = [];
 
     const DB_NAME = 'TikFlowDB';
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
 
     function openDB() {
         return new Promise((resolve, reject) => {
@@ -330,12 +458,13 @@
                 const db = event.target.result;
                 if (!db.objectStoreNames.contains('users')) {
                     const userStore = db.createObjectStore('users', { keyPath: 'username' });
-                    userStore.createIndex('password', 'password');
+                    userStore.createIndex('name', 'name');
                 }
                 if (!db.objectStoreNames.contains('videos')) {
                     const videoStore = db.createObjectStore('videos', { keyPath: 'id', autoIncrement: true });
                     videoStore.createIndex('username', 'username');
                     videoStore.createIndex('timestamp', 'timestamp');
+                    videoStore.createIndex('hashtags', 'hashtags', { multiEntry: true });
                 }
                 if (!db.objectStoreNames.contains('likes')) {
                     db.createObjectStore('likes', { keyPath: ['videoId', 'username'] });
@@ -358,6 +487,15 @@
             const req = store.get(username);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => resolve(null);
+        });
+    }
+
+    async function getAllUsers() {
+        const tx = db.transaction('users', 'readonly');
+        const store = tx.objectStore('users');
+        return new Promise((resolve) => {
+            const req = store.getAll();
+            req.onsuccess = () => resolve(req.result);
         });
     }
 
@@ -433,66 +571,167 @@
         return all.filter(l => l.videoId === videoId).length;
     }
 
-    // ========== АУТЕНТИФИКАЦИЯ ==========
-    window.showRegister = () => {
-        document.getElementById('loginForm').style.display = 'none';
-        document.getElementById('registerForm').style.display = 'block';
-    };
-    window.showLogin = () => {
-        document.getElementById('loginForm').style.display = 'block';
-        document.getElementById('registerForm').style.display = 'none';
-    };
-
-    window.register = async () => {
-        const username = document.getElementById('regUsername').value.trim();
-        const password = document.getElementById('regPassword').value;
-        const name = document.getElementById('regName').value.trim() || username;
-        if (!username || !password) {
-            alert('Заполните все поля');
-            return;
+    // ========== ПОИСК ==========
+    window.performSearch = async () => {
+        const query = document.getElementById('searchInput').value.trim().toLowerCase();
+        if (!query) return;
+        
+        const allVideos = await getAllVideos();
+        const allUsers = await getAllUsers();
+        
+        if (currentFilter === 'hashtags') {
+            // Поиск по хэштегам
+            const results = allVideos.filter(video => {
+                return video.hashtags && video.hashtags.some(tag => tag.toLowerCase().includes(query));
+            });
+            currentSearchResults = results;
+            displaySearchResults(results, `Видео по хэштегу "${query}"`);
+        } else if (currentFilter === 'users') {
+            // Поиск пользователей
+            const users = allUsers.filter(user => 
+                user.username.toLowerCase().includes(query) || 
+                user.name.toLowerCase().includes(query)
+            );
+            showUsersList(users, `Результаты поиска: "${query}"`);
+        } else {
+            // Все: ищем и пользователей и видео
+            const matchedUsers = allUsers.filter(user => 
+                user.username.toLowerCase().includes(query) || 
+                user.name.toLowerCase().includes(query)
+            );
+            const matchedVideos = allVideos.filter(video => 
+                (video.caption && video.caption.toLowerCase().includes(query)) ||
+                (video.hashtags && video.hashtags.some(tag => tag.toLowerCase().includes(query))) ||
+                (video.username && video.username.toLowerCase().includes(query))
+            );
+            
+            if (matchedUsers.length > 0) {
+                showUsersList(matchedUsers, `Пользователи по запросу "${query}"`);
+            } else if (matchedVideos.length > 0) {
+                currentSearchResults = matchedVideos;
+                displaySearchResults(matchedVideos, `Видео по запросу "${query}"`);
+            } else {
+                alert('Ничего не найдено');
+            }
         }
-        const existing = await getUser(username);
-        if (existing) {
-            alert('Пользователь уже существует');
-            return;
-        }
-        const user = { username, password, name, avatar: '😎', videosCount: 0, followers: 0 };
-        await saveUser(user);
-        alert('Регистрация успешна! Войдите.');
-        showLogin();
     };
-
-    window.login = async () => {
-        const username = document.getElementById('loginUsername').value.trim();
-        const password = document.getElementById('loginPassword').value;
+    
+    function displaySearchResults(videos, title) {
+        const feedContainer = document.getElementById('videoFeed');
+        feedContainer.innerHTML = `<div style="color: white; padding: 20px; text-align: center;">🎯 ${title}</div>`;
+        renderVideosToFeed(videos, feedContainer);
+    }
+    
+    function showUsersList(users, title) {
+        document.getElementById('searchQueryDisplay').innerText = title;
+        const usersListDiv = document.getElementById('usersList');
+        usersListDiv.innerHTML = '';
+        users.forEach(user => {
+            if (user.username === currentUser.username) return;
+            const userCard = document.createElement('div');
+            userCard.style.cssText = 'background: #1a1a1a; margin: 10px 0; padding: 15px; border-radius: 15px; display: flex; justify-content: space-between; align-items: center;';
+            userCard.innerHTML = `
+                <div>
+                    <div style="font-size: 18px; font-weight: bold;">${escapeHtml(user.name)}</div>
+                    <div style="color: #888;">@${user.username}</div>
+                </div>
+                <button onclick="viewUserProfile('${user.username}')" style="width: auto; padding: 8px 20px;">Просмотреть</button>
+            `;
+            usersListDiv.appendChild(userCard);
+        });
+        
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('searchUsersPage').classList.add('active');
+    }
+    
+    window.viewUserProfile = async (username) => {
         const user = await getUser(username);
-        if (!user || user.password !== password) {
-            alert('Неверные данные');
-            return;
+        if (!user) return;
+        
+        const userVideos = await getUserVideos(username);
+        let totalLikes = 0;
+        for(const v of userVideos) {
+            totalLikes += await getLikesCount(v.id);
         }
-        currentUser = user;
-        document.getElementById('authPage').classList.remove('active');
-        document.getElementById('app').style.display = 'block';
-        await loadFeed();
-        loadProfile();
-        setupNavigation();
+        
+        const profileHtml = `
+            <div class="profile-header">
+                <div class="avatar">${user.avatar || '🎮'}</div>
+                <h2>${escapeHtml(user.name)}</h2>
+                <div>@${user.username}</div>
+                <div class="stats">
+                    <div><strong>${userVideos.length}</strong><br>Видео</div>
+                    <div><strong>${totalLikes}</strong><br>Лайков</div>
+                </div>
+            </div>
+            <div class="video-grid" id="foreignVideoGrid"></div>
+        `;
+        document.getElementById('foreignProfileContent').innerHTML = profileHtml;
+        const grid = document.getElementById('foreignVideoGrid');
+        for(const vid of userVideos) {
+            const thumb = document.createElement('video');
+            thumb.src = vid.dataUrl;
+            thumb.muted = true;
+            thumb.className = 'video-thumb';
+            thumb.addEventListener('click', () => {
+                goBackToFeed();
+                setTimeout(() => {
+                    const videos = document.querySelectorAll('.video-container video');
+                    for(let i=0; i<videos.length; i++) {
+                        if(videos[i].src === thumb.src) {
+                            videos[i].scrollIntoView({ behavior: 'smooth' });
+                            videos[i].play();
+                            break;
+                        }
+                    }
+                }, 100);
+            });
+            grid.appendChild(thumb);
+        }
+        
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('foreignProfilePage').classList.add('active');
     };
-
+    
+    window.goBackToFeed = () => {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('feedPage').classList.add('active');
+        loadFeed();
+    };
+    
+    window.goBackFromForeignProfile = () => {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.getElementById('searchUsersPage').classList.add('active');
+    };
+    
+    window.setFilter = (filter) => {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`.filter-btn[data-filter="${filter}"]`).classList.add('active');
+        document.getElementById('searchInput').placeholder = filter === 'hashtags' ? 'Поиск по #хэштегу...' : (filter === 'users' ? 'Поиск по никнейму...' : 'Поиск по пользователям или #хэштегам...');
+    };
+    
     // ========== ЗАГРУЗКА ЛЕНТЫ ==========
     async function loadFeed() {
         const videos = await getAllVideos();
         const feedContainer = document.getElementById('videoFeed');
+        await renderVideosToFeed(videos, feedContainer);
+    }
+    
+    async function renderVideosToFeed(videos, feedContainer) {
         feedContainer.innerHTML = '';
         for (const video of videos) {
             const likesCount = await getLikesCount(video.id);
             const liked = await isLiked(video.id, currentUser.username);
             const container = document.createElement('div');
             container.className = 'video-container';
+            const hashtagsHtml = video.hashtags ? video.hashtags.map(tag => `<span class="hashtag" onclick="searchByHashtag('${tag}')">${escapeHtml(tag)}</span>`).join('') : '';
             container.innerHTML = `
                 <video src="${video.dataUrl}" loop muted playsinline></video>
                 <div class="video-overlay">
-                    <div class="video-username">@${video.username}</div>
+                    <div class="video-username" onclick="viewUserProfile('${video.username}')">@${escapeHtml(video.username)}</div>
                     <div class="video-caption">${escapeHtml(video.caption)}</div>
+                    <div class="hashtags">${hashtagsHtml}</div>
                 </div>
                 <div class="video-actions">
                     <div class="action-btn like-btn" data-id="${video.id}">
@@ -534,11 +773,16 @@
             
             feedContainer.appendChild(container);
         }
-        // авто-плей для первого
         const firstVideo = feedContainer.querySelector('video');
         if (firstVideo) firstVideo.play().catch(e=>{});
     }
-
+    
+    window.searchByHashtag = (hashtag) => {
+        document.getElementById('searchInput').value = hashtag;
+        setFilter('hashtags');
+        performSearch();
+    };
+    
     // ========== ЗАГРУЗКА ВИДЕО ==========
     let selectedVideoFile = null;
     window.handleVideoSelect = (input) => {
@@ -547,24 +791,6 @@
             alert(`Выбрано: ${selectedVideoFile.name}`);
         }
     };
-    const dropzone = document.getElementById('dropzone');
-    if(dropzone) {
-        dropzone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropzone.style.borderColor = '#ff3b5c';
-        });
-        dropzone.addEventListener('dragleave', () => {
-            dropzone.style.borderColor = '#ff3b5c';
-        });
-        dropzone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            const file = e.dataTransfer.files[0];
-            if(file && file.type.startsWith('video/')) {
-                selectedVideoFile = file;
-                alert(`Выбрано: ${file.name}`);
-            }
-        });
-    }
     
     window.uploadVideo = async () => {
         if (!selectedVideoFile) {
@@ -572,22 +798,25 @@
             return;
         }
         const caption = document.getElementById('videoCaption').value;
+        const hashtagsStr = document.getElementById('videoHashtags').value;
+        const hashtags = hashtagsStr.split(/\s+/).filter(tag => tag.startsWith('#')).map(tag => tag.toLowerCase());
+        
         const reader = new FileReader();
         reader.onload = async (e) => {
             const videoData = {
                 username: currentUser.username,
                 caption: caption || 'Без описания',
+                hashtags: hashtags,
                 dataUrl: e.target.result,
-                timestamp: Date.now(),
-                likes: 0
+                timestamp: Date.now()
             };
-            const newId = await saveVideo(videoData);
+            await saveVideo(videoData);
             alert('Видео опубликовано!');
             selectedVideoFile = null;
             document.getElementById('videoCaption').value = '';
+            document.getElementById('videoHashtags').value = '';
             document.getElementById('videoInput').value = '';
             await loadFeed();
-            // переключиться на ленту
             document.querySelector('.nav-item[data-page="feed"]').click();
         };
         reader.readAsDataURL(selectedVideoFile);
@@ -596,7 +825,6 @@
     // ========== ПРОФИЛЬ ==========
     async function loadProfile() {
         const userVideos = await getUserVideos(currentUser.username);
-        const allVideos = await getAllVideos();
         let totalLikes = 0;
         for(const v of userVideos) {
             totalLikes += await getLikesCount(v.id);
@@ -609,7 +837,6 @@
                 <div class="stats">
                     <div><strong>${userVideos.length}</strong><br>Видео</div>
                     <div><strong>${totalLikes}</strong><br>Лайков</div>
-                    <div><strong>0</strong><br>Подписчиков</div>
                 </div>
             </div>
             <div class="video-grid" id="profileGrid"></div>
@@ -620,10 +847,8 @@
             const thumb = document.createElement('video');
             thumb.src = vid.dataUrl;
             thumb.muted = true;
-            thumb.loop = false;
             thumb.className = 'video-thumb';
             thumb.addEventListener('click', () => {
-                // Показать видео в ленте
                 document.querySelector('.nav-item[data-page="feed"]').click();
                 setTimeout(() => {
                     const videos = document.querySelectorAll('.video-container video');
@@ -640,14 +865,61 @@
         }
     }
     
-    // ========== НАВИГАЦИЯ ==========
+    // ========== АУТЕНТИФИКАЦИЯ ==========
+    window.showRegister = () => {
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('registerForm').style.display = 'block';
+    };
+    window.showLogin = () => {
+        document.getElementById('loginForm').style.display = 'block';
+        document.getElementById('registerForm').style.display = 'none';
+    };
+    
+    window.register = async () => {
+        const username = document.getElementById('regUsername').value.trim();
+        const password = document.getElementById('regPassword').value;
+        const name = document.getElementById('regName').value.trim() || username;
+        if (!username || !password) {
+            alert('Заполните все поля');
+            return;
+        }
+        const existing = await getUser(username);
+        if (existing) {
+            alert('Пользователь уже существует');
+            return;
+        }
+        const user = { username, password, name, avatar: '😎' };
+        await saveUser(user);
+        alert('Регистрация успешна! Войдите.');
+        showLogin();
+    };
+    
+    window.login = async () => {
+        const username = document.getElementById('loginUsername').value.trim();
+        const password = document.getElementById('loginPassword').value;
+        const user = await getUser(username);
+        if (!user || user.password !== password) {
+            alert('Неверные данные');
+            return;
+        }
+        currentUser = user;
+        document.getElementById('authPage').classList.remove('active');
+        document.getElementById('app').style.display = 'block';
+        await loadFeed();
+        loadProfile();
+        setupNavigation();
+    };
+    
     function setupNavigation() {
         const navItems = document.querySelectorAll('.nav-item');
-        const pages = document.querySelectorAll('.page');
+        const pages = ['feed', 'upload', 'profile'];
         navItems.forEach(item => {
             item.addEventListener('click', () => {
                 const pageName = item.dataset.page;
-                pages.forEach(page => page.classList.remove('active'));
+                pages.forEach(p => {
+                    const pageElement = document.getElementById(`${p}Page`);
+                    if (pageElement) pageElement.classList.remove('active');
+                });
                 document.getElementById(`${pageName}Page`).classList.add('active');
                 navItems.forEach(nav => nav.classList.remove('active'));
                 item.classList.add('active');
@@ -669,18 +941,14 @@
     
     // ========== ИНИЦИАЛИЗАЦИЯ ==========
     openDB().then(() => {
-        console.log('DB ready');
-        // проверяем, есть ли тестовый юзер
         (async () => {
             const demo = await getUser('demo');
             if(!demo) {
                 await saveUser({ username: 'demo', password: '123', name: 'Демо пользователь', avatar: '🔥' });
             }
-            const demo2 = await getUser('tiktoker');
-            if(!demo2) {
+            const tiktoker = await getUser('tiktoker');
+            if(!tiktoker) {
                 await saveUser({ username: 'tiktoker', password: '123', name: 'Креатор', avatar: '🎬' });
-                // добавим демо-видео образец (небольшой пример, но без реального видеофайла сложно, добавим заглушку)
-                // создадим пустышку? проще оставить без демо-видео, пользователи загрузят сами.
             }
         })();
     });
